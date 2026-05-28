@@ -187,23 +187,50 @@ neurallog/
 
 ## 🏛 Architecture Overview
 
+
 ```text
 ┌──────────────────────────────────────────────────────────────┐
-│ Browser (React 18 SPA)                                      │
-└──────────────────────────────────────────────────────────────┘
-                │
-                ▼
+│  Browser (React 18 SPA)                                     │
+│  ┌──────────┐   ┌───────────────┐   ┌──────────────────────┐ │
+│  │ Sidebar  │   │   ChatView    │   │ Analytics Dashboard  │ │
+│  │ List /   │   │ SSE streaming │   │ Latency · Throughput │ │
+│  │ Resume / │   │ Markdown render│  │ Errors · Tokens      │ │
+│  │ Delete   │   │ Cancel button │   │ Provider breakdown   │ │
+│  └────┬─────┘   └──────┬────────┘   └──────────┬───────────┘ │
+└───────┼────────────────┼──────────────────────┼─────────────┘
+        │ REST           │ SSE stream            │ REST
+        ▼                ▼                       ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ Spring Boot 3.2 Backend                                     │
-└──────────────────────────────────────────────────────────────┘
-                │
-                ▼
+│  Spring Boot 3.2 (port 8080)                                │
+│                                                              │
+│  /api/conversations  ↔  ConversationService                 │
+│  /api/chat/stream    ↔  ChatService                         │
+│                              │                               │
+│                              ▼                               │
+│                    LlmSdkWrapper ← captures metadata         │
+│                              │                               │
+│                              ▼                               │
+│               ProviderRegistry (auto-fallback routing)       │
+│               ├── OpenAiProvider  → api.openai.com           │
+│               ├── GeminiProvider → googleapis.com            │
+│               └── GroqProvider   → api.groq.com              │
+│                              │                               │
+│                              ▼ @Async (non-blocking)         │
+│  /api/ingest/log     ↔  IngestionService                    │
+│                         validate → redact PII → persist      │
+│                                                              │
+│  /api/analytics/*    ↔  AnalyticsService                    │
+└───────────────────────────────┬──────────────────────────────┘
+                                │ JPA / Hibernate
+                                ▼
 ┌──────────────────────────────────────────────────────────────┐
-│ MySQL 8.x                                                   │
+│  MySQL 8.x                                                   │
+│  ├── conversations   (id, title, provider, model, …)        │
+│  ├── messages        (id, conv_id, role, content, tokens…)  │
+│  └── inference_logs  (id, provider, model, latency, pii…)   │
 └──────────────────────────────────────────────────────────────┘
 ```
 
----
 
 ## 🔌 Lightweight SDK Wrapper
 
@@ -240,22 +267,39 @@ All logs are shipped asynchronously via `IngestionService` — zero latency adde
 
 ---
 
+
 ## 📡 Ingestion Pipeline
 
 ```text
 ChatService / External SDK
         │
-        ▼
-POST /api/ingest/log → 202 Accepted immediately
+        ▼  POST /api/ingest/log → 202 Accepted immediately
         │
-        ▼
-@Async Spring thread pool (non-blocking)
+        ▼  @Async Spring thread pool (non-blocking)
         │
-        ▼
-Validate → Redact PII → Extract metadata → Persist to MySQL
+  ┌──────────────────────────────────────────────┐
+  │  IngestionService                            │
+  │                                              │
+  │  1. Validate                                 │
+  │     • provider + model required              │
+  │     • drops silently if invalid              │
+  │                                              │
+  │  2. Redact PII                               │
+  │     • email       → [EMAIL_REDACTED]         │
+  │     • phone       → [PHONE_REDACTED]         │
+  │     • credit card → [CC_REDACTED]            │
+  │     • sets pii_detected = true if found      │
+  │                                              │
+  │  3. Extract metadata                         │
+  │     • compute total_tokens                   │
+  │     • truncate previews to 500 chars         │
+  │     • set default status = "success"         │
+  │                                              │
+  │  4. Persist to MySQL inference_logs          │
+  └──────────────────────────────────────────────┘
 ```
 
-Batch ingestion is also supported:
+**Batch ingestion** is also supported:
 
 ```text
 POST /api/ingest/batch
@@ -263,7 +307,6 @@ POST /api/ingest/batch
 
 accepts an array of payloads.
 
----
 
 ## 📊 Logging Strategy
 
