@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: neurallog
+  labels:
+    app.kubernetes.io/name: neurallog

@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: neurallog
+  labels:
+    app: backend
+spec:
+  replicas: 2           # Horizontal scale — stateless, safe to run multiple
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: neurallog/backend:latest   # Replace with your registry image
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: neurallog-config
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: neurallog-secrets, key: DB_PASSWORD }
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: neurallog-secrets, key: OPENAI_API_KEY }
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: neurallog-secrets, key: GEMINI_API_KEY }
+            - name: GROQ_API_KEY
+              valueFrom:
+                secretKeyRef: { name: neurallog-secrets, key: GROQ_API_KEY }
+          readinessProbe:
+            httpGet:
+              path: /api/providers
+              port: 8080
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /api/providers
+              port: 8080
+            initialDelaySeconds: 90
+            periodSeconds: 30
+          resources:
+            requests: { memory: "512Mi", cpu: "250m" }
+            limits:   { memory: "1Gi",   cpu: "1000m" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: neurallog
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP

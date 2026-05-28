@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: neurallog-config
+  namespace: neurallog
+data:
+  DB_URL: "jdbc:mysql://mysql-service:3306/llmplatform?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&createDatabaseIfNotExist=true"
+  DB_USERNAME: "llmuser"
+  CORS_ORIGINS: "http://localhost:3000,http://frontend-service"
+  PORT: "8080"
