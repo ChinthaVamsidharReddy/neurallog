@@ -512,5 +512,6 @@ cd backend && mvn clean spring-boot:run
 
 ## 📄 License
 
-MIT — free for personal projects, portfolio demos, and production deployments.#   n e u r a l l o g  
+MIT — free for personal projects, portfolio demos, and production deployments.
+ 
  
